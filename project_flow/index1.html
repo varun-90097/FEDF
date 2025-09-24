@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Recipe Finder Snake Flow</title>
+<style>
+  body {
+    font-family: Arial, sans-serif;
+    background: #f6f8fa;
+    margin: 0;
+    padding: 30px;
+  }
+  h1 {
+    text-align: center;
+    margin-bottom: 40px;
+    color: #222;
+  }
+  .flow-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 40px;
+  }
+  .row {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    position: relative;
+  }
+  .row.reverse {
+    flex-direction: row-reverse;
+  }
+  .box {
+    background: #fff;
+    border: 2px solid #2f9d58;
+    border-radius: 10px;
+    padding: 16px 20px;
+    min-width: 200px;
+    text-align: center;
+    box-shadow: 0 6px 12px rgba(0,0,0,0.08);
+    font-weight: 600;
+    position: relative;
+  }
+  .arrow-right, .arrow-left {
+    font-size: 24px;
+    color: #2f9d58;
+    font-weight: bold;
+  }
+  .arrow-down {
+    font-size: 24px;
+    color: #2f9d58;
+    font-weight: bold;
+    position: absolute;
+    bottom: -35px;
+  }
+  /* Down arrow from last box in row */
+  .row .box.last .arrow-down {
+    left: 50%;
+    transform: translateX(-50%);
+  }
+</style>
+</head>
+<body>
+  <h1>Recipe Finder – Project Flow</h1>
+  <div class="flow-container">
+
+    <!-- Row 1 (Left to Right) -->
+    <div class="row">
+      <div class="box">User Login / Signup</div>
+      <div class="arrow-right">→</div>
+      <div class="box">Home / Dashboard</div>
+      <div class="arrow-right">→</div>
+      <div class="box last">Search Recipes
+        <div class="arrow-down">↓</div>
+      </div>
+    </div>
+
+    <!-- Row 2 (Right to Left) -->
+    <div class="row reverse">
+      <div class="box">API Request / Integration</div>
+      <div class="arrow-left">←</div>
+      <div class="box">Data Processing & Filtering</div>
+      <div class="arrow-left">←</div>
+      <div class="box last">Display Results
+        <div class="arrow-down">↓</div>
+      </div>
+    </div>
+
+    <!-- Row 3 (Left to Right) -->
+    <div class="row">
+      <div class="box">Recipe Details Page</div>
+      <div class="arrow-right">→</div>
+      <div class="box">Save / User Profile</div>
+      <div class="arrow-right">→</div>
+      <div class="box last">Responsive UI & Logout</div>
+    </div>
+
+  </div>
+</body>
+</html>

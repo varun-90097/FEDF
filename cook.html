@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Recipe Suggester — DB + Gemini</title>
+  <style>
+    :root{
+      --bg:#0b1220; --panel:#111a2b; --panel-2:#0f1624; --text:#e8eef7; --muted:#9fb0c9;
+      --accent:#7c5cff; --accent-2:#00d2ff; --bad:#ff6b6b; --ok:#00c853; --border:#1e2a44;
+      --card:#0e1729; --chip:#16233e;
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Inter, "Helvetica Neue", Arial;
+      background: radial-gradient(1200px 600px at 80% -10%, #15233e 0%, #0b1220 60%) no-repeat, var(--bg);
+      color:var(--text);
+    }
+    header{
+      padding:24px 16px; position:sticky; top:0; z-index:5;
+      background:linear-gradient(180deg, rgba(11,18,32,.96), rgba(11,18,32,.75) 70%, transparent);
+      backdrop-filter: blur(10px);
+      border-bottom:1px solid var(--border);
+    }
+    .wrap{max-width:1100px; margin:0 auto; padding:0 12px}
+    h1{margin:0 0 6px; font-size:clamp(20px,2.8vw,30px); font-weight:800; letter-spacing:.3px}
+    .sub{color:var(--muted); font-size:14px}
+    .grid{
+      display:grid; gap:14px; grid-template-columns: 1fr; margin:18px 0 8px;
+    }
+    @media(min-width:880px){
+      .grid{grid-template-columns: 1.4fr .6fr}
+    }
+    .panel{
+      background:linear-gradient(180deg, var(--panel), var(--panel-2));
+      border:1px solid var(--border); border-radius:18px; padding:16px;
+      box-shadow: 0 20px 45px rgba(2,10,30,.35), inset 0 1px 0 rgba(255,255,255,.03);
+    }
+    label{display:block; font-size:13px; color:var(--muted); margin:6px 0 8px}
+    textarea, input, select, button{
+      width:100%; outline:none; border-radius:12px; border:1px solid var(--border);
+      background:#0b1324; color:var(--text); padding:12px 14px; font-size:15px;
+    }
+    textarea{min-height:80px; resize:vertical}
+    .row{display:flex; gap:10px; align-items:center}
+    .row > *{flex:1}
+    .btn{
+      background:linear-gradient(180deg, var(--accent), #5b3afd);
+      border:none; font-weight:700; cursor:pointer; transition:.2s transform, .2s opacity;
+      box-shadow: 0 8px 24px rgba(124,92,255,.35);
+    }
+    .btn:hover{transform:translateY(-1px)}
+    .btn.secondary{
+      background:linear-gradient(180deg, #183052, #12223c);
+      border:1px solid var(--border); box-shadow:none;
+    }
+    .btn.ghost{background:transparent; border:1px dashed var(--border)}
+    .chips{display:flex; flex-wrap:wrap; gap:8px; margin-top:10px}
+    .chip{
+      background:var(--chip); border:1px solid var(--border); padding:6px 10px; border-radius:999px;
+      font-size:12px; color:var(--muted)
+    }
+    .status{margin-top:10px; font-size:13px; color:var(--muted)}
+    .status.good{color:var(--ok)} .status.bad{color:var(--bad)}
+    .cards{display:grid; gap:14px; grid-template-columns: 1fr}
+    @media(min-width:700px){.cards{grid-template-columns: repeat(2, 1fr)}}
+    @media(min-width:1040px){.cards{grid-template-columns: repeat(3, 1fr)}}
+    .card{
+      background:linear-gradient(180deg, var(--card), #0b1220); border:1px solid var(--border); border-radius:16px;
+      padding:14px; display:flex; flex-direction:column; gap:10px; min-height:220px;
+    }
+    .card h3{margin:0; font-size:17px}
+    .meta{display:flex; gap:8px; flex-wrap:wrap}
+    .badge{font-size:12px; color:var(--muted); padding:4px 8px; border:1px solid var(--border); border-radius:999px; background:#0b1324}
+    details{border-top:1px dashed var(--border); padding-top:10px}
+    .footer{margin:18px 0 8px; color:var(--muted); font-size:12px}
+    .k{
+      font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size:12px; color:#d8e6ff;
+      background:#0e1931; border:1px solid var(--border); padding:2px 6px; border-radius:8px;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="wrap">
+      <h1>Recipe Suggester</h1>
+      <div class="sub">Type your ingredients or set a time limit, filter by diet, and we’ll match recipes from your <span class="k">recipes.json</span>. Optionally, ask Gemini to invent recipes.</div>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section class="grid">
+      <div class="panel">
+        <label for="ingredients">Ingredients you have (comma-separated)</label>
+        <textarea id="ingredients" placeholder="e.g., tomato, onion, garlic, rice, tofu"></textarea>
+
+        <div class="row">
+          <div>
+            <label for="maxTime">Max time (minutes)</label>
+            <input id="maxTime" type="number" min="5" max="240" value="30"/>
+          </div>
+          <div>
+            <label for="diet">Diet</label>
+            <select id="diet">
+              <option value="any">Any</option>
+              <option value="vegetarian">Vegetarian</option>
+              <option value="vegan">Vegan</option>
+              <option value="eggetarian">Eggetarian</option>
+              <option value="gluten-free">Gluten-free</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="row" style="margin-top:8px;">
+          <button id="btnFind" class="btn">Find recipes</button>
+          <button id="btnSurprise" class="btn secondary">Surprise me 🎲</button>
+        </div>
+
+        <div class="chips" id="chips"></div>
+
+        <div class="panel" style="margin-top:12px">
+          <div class="row">
+            <div>
+              <label for="apiKey">Gemini API key (optional)</label>
+              <input id="apiKey" type="password" placeholder="Paste your key; stored locally" />
+            </div>
+            <div style="flex:.6">
+              <label>&nbsp;</label>
+              <button id="saveKey" class="btn secondary">Save key</button>
+            </div>
+          </div>
+          <div class="row" style="margin-top:8px;">
+            <button id="btnAskAI" class="btn ghost">Use AI to invent recipes</button>
+          </div>
+          <div id="aiStatus" class="status"></div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <strong>Tips</strong>
+        <ul style="margin-top:8px; line-height:1.55; color:var(--muted); padding-left:18px">
+          <li>Place <span class="k">recipes.json</span> in the same folder as this HTML file.</li>
+          <li>Ingredient matching is flexible; we score by overlap.</li>
+          <li>“Use AI” asks Gemini for JSON recipes (we validate & render them).</li>
+          <li>Don’t expose real API keys publicly — this demo keeps it in <span class="k">localStorage</span> only on your device.</li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div id="resultsHeader" class="sub">Loading recipes…</div>
+      <div id="cards" class="cards" aria-live="polite"></div>
+      <div class="footer">Powered by your local JSON database. AI is optional.</div>
+    </section>
+  </main>
+
+  <script>
+    const cardsEl = document.getElementById('cards');
+    const headerEl = document.getElementById('resultsHeader');
+    const chipsEl = document.getElementById('chips');
+    const aiStatusEl = document.getElementById('aiStatus');
+    const API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
+
+    // ---------- load & persist key ----------
+    const keyInput = document.getElementById('apiKey');
+    const saved = localStorage.getItem('GEMINI_KEY');
+    if (saved) keyInput.value = saved;
+    document.getElementById('saveKey').addEventListener('click', () => {
+      localStorage.setItem('GEMINI_KEY', keyInput.value.trim());
+      aiStatus('API key saved locally ✅', 'good');
+    });
+
+    // ---------- fetch database ----------
+    let DB = [];
+    async function loadDB(){
+      try{
+        const res = await fetch('recipes.json', {cache: 'no-store'});
+        if (!res.ok) throw new Error('recipes.json not found');
+        DB = await res.json();
+        headerEl.textContent = `Loaded ${DB.length} recipes. Use the filters to find matches.`;
+        render(DB.slice(0, Math.min(9, DB.length)));
+      }catch(err){
+        headerEl.innerHTML = `Could not load <span class="k">recipes.json</span>. ${err.message}`;
+      }
+    }
+    loadDB();
+
+    // ---------- helpers ----------
+    function parseIngredients(input){
+      return input
+        .split(',')
+        .map(s => s.trim().toLowerCase())
+        .filter(Boolean);
+    }
+    function chipify(list){
+      chipsEl.innerHTML = '';
+      list.forEach(x=>{
+        const d = document.createElement('span');
+        d.className = 'chip';
+        d.textContent = x;
+        chipsEl.appendChild(d);
+      });
+    }
+    function scoreRecipe(recipe, have){
+      const ingNames = (recipe.ingredients || []).map(i => (i.item||i).toLowerCase());
+      const overlap = have.filter(h => ingNames.some(n => n.includes(h) || h.includes(n)));
+      const score = overlap.length + (recipe.time <= +maxTime.value ? 1 : 0);
+      return {score, overlap};
+    }
+    function render(list){
+      cardsEl.innerHTML = '';
+      if (!list.length){
+        headerEl.textContent = 'No matches. Try fewer ingredients or more time.';
+        return;
+      }
+      headerEl.textContent = `Showing ${list.length} recipe${list.length>1?'s':''}`;
+      list.forEach(r=>{
+        const card = document.createElement('div');
+        card.className = 'card';
+        card.innerHTML = `
+          <h3>${r.name || 'Untitled recipe'}</h3>
+          <div class="meta">
+            <span class="badge">⏱ ${r.time || '?'} min</span>
+            ${r.diet ? `<span class="badge">🥗 ${r.diet}</span>`:''}
+            ${r.cuisine ? `<span class="badge">🌍 ${r.cuisine}</span>`:''}
+            ${r.servings ? `<span class="badge">🍽 Serves ${r.servings}</span>`:''}
+          </div>
+          <details>
+            <summary>Ingredients & steps</summary>
+            <div style="margin-top:8px">
+              <strong>Ingredients</strong>
+              <ul style="margin:6px 0 12px 18px">
+                ${ (r.ingredients||[]).map(i=>{
+                    if (typeof i === 'string') return `<li>${i}</li>`
+                    const q = [i.quantity, i.unit].filter(Boolean).join(' ');
+                    return `<li>${i.item}${q?` — <em style="color:var(--muted)">${q}${i.notes?`, ${i.notes}`:''}</em>`:''}</li>`
+                  }).join('') }
+              </ul>
+              <strong>Steps</strong>
+              <ol style="margin:6px 0 0 18px">
+                ${(r.steps||[]).map(s=>`<li>${s}</li>`).join('')}
+              </ol>
+              ${r.tips?.length? `<div style="margin-top:10px; color:var(--muted)"><strong>Tips:</strong> ${r.tips.join(' • ')}</div>`:''}
+            </div>
+          </details>
+        `;
+        cardsEl.appendChild(card);
+      });
+    }
+
+    // ---------- filtering ----------
+    const ingredientsEl = document.getElementById('ingredients');
+    const maxTime = document.getElementById('maxTime');
+    const diet = document.getElementById('diet');
+
+    document.getElementById('btnFind').addEventListener('click', ()=>{
+      const have = parseIngredients(ingredientsEl.value);
+      chipify(have);
+      const t = +maxTime.value || 9999;
+      const d = diet.value;
+      const filtered = DB
+        .filter(r => (d==='any' || (r.diet||'').toLowerCase()===d))
+        .filter(r => (r.time||9999) <= t)
+        .map(r => ({...r, __score: scoreRecipe(r, have)}))
+        .sort((a,b)=> b.__score.score - a.__score.score)
+        .slice(0, 12);
+      render(filtered);
+    });
+
+    // ---------- surprise me ----------
+    document.getElementById('btnSurprise').addEventListener('click', ()=>{
+      if (!DB.length) return;
+      const t = +maxTime.value || 9999;
+      const d = diet.value;
+      const pool = DB.filter(r => (d==='any' || (r.diet||'').toLowerCase()===d))
+                     .filter(r => (r.time||9999) <= t);
+      const pick = pool.length ? pool[Math.floor(Math.random()*pool.length)] : DB[Math.floor(Math.random()*DB.length)];
+      render([pick]);
+      headerEl.textContent = `Surprise! Here’s a random pick for you 🎉`;
+    });
+
+    // ---------- Gemini integration (JSON Mode, strong error messages) ----------
+    function aiStatus(msg, kind=''){ aiStatusEl.textContent = msg; aiStatusEl.className = `status ${kind}`; }
+
+    async function askGeminiForRecipes(){
+      const key = (keyInput.value || '').trim();
+      if (!key){ aiStatus('No API key provided. Paste your Gemini API key to use AI.', 'bad'); return; }
+
+      const have = parseIngredients(ingredientsEl.value);
+      const t = +maxTime.value || 30;
+      const d = diet.value;
+
+      const prompt = `
+        You are a culinary assistant. Generate 5 ORIGINAL recipes as JSON only, no code fences.
+        Each recipe must include: name (string), time (minutes number), diet (one of: vegetarian, vegan, eggetarian, gluten-free),
+        cuisine (string), servings (number), ingredients (array of {item, quantity, unit, notes}), steps (array of strings 8–12 steps),
+        tips (array of strings), and nutrition (object with calories, protein_g, fat_g, carbs_g).
+        Constraints:
+        - Prefer recipes that can be cooked within ${t} minutes.
+        - Diet preference: ${d}.
+        - Prefer using some of these ingredients if relevant: ${have.join(', ') || 'any pantry items'}.
+      `.trim();
+
+      aiStatus('Contacting Gemini…', '');
+
+      try{
+        const body = {
+          contents: [{ parts: [{ text: prompt }]}],
+          generationConfig: {
+            response_mime_type: "application/json"
+          }
+        };
+        const url = `${API_URL}?key=${encodeURIComponent(key)}`;
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        });
+
+        if (!res.ok){
+          const text = await res.text();
+          throw new Error(`HTTP ${res.status}: ${text}`);
+        }
+
+        const data = await res.json();
+        // Expect JSON Mode -> plain JSON in first candidate
+        const part = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (!part) throw new Error('Empty AI response');
+
+        let recipes;
+        try{
+          recipes = JSON.parse(part);
+        }catch{
+          // fallback: extract JSON block if model wrapped anything
+          const match = part.match(/\{[\s\S]*\}|\[[\s\S]*\]/);
+          recipes = match ? JSON.parse(match[0]) : null;
+        }
+        if (!recipes || !Array.isArray(recipes)) throw new Error('AI did not return a JSON array');
+
+        aiStatus('AI recipes generated ✅', 'good');
+        render(recipes.slice(0,12));
+      }catch(err){
+        console.error('Gemini error', err);
+        aiStatus(`AI request failed: ${err.message}`, 'bad');
+      }
+    }
+
+    document.getElementById('btnAskAI').addEventListener('click', askGeminiForRecipes);
+  </script>
+</body>
+</html>
