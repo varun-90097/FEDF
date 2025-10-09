@@ -12,3 +12,4 @@ export function removeFromCart(index) {
 export function calculateTotal() {
  return cart.reduce((sum, book) => sum + book.price, 0);
 }
+ 
